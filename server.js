@@ -9,7 +9,7 @@ console.log(`✅ [SERVER] WebSocket server is running on ws://localhost:${PORT}`
 
 const MAX_ROUNDS = 10;
 const COLOR_POOL = ["#FF0000", "#0000FF", "#008000", "#FFFF00", "#FFA500", "#800080", "#FF00FF", "#00FFFF", "#A52A2A", "#FFC0CB", "#808080", "#008080", "#800000", "#F0E68C"];
-const EMOTIONS_POOL = ["cameleon.png", "dog.png", "elephant.png", "fox.png", "hedgehog.png", "octopus.png", "peacock.png", "rooster.png", "squirel.png", "turtle.png"];
+const EMOTIONS_POOL = ["cameleon.png", "dog.png", "elephant.png", "fox.png", "hedgehog.png", "octopus.png", "peacock.png", "rooster.png", "squirel.png", "turtle.png", "dog_2.png", "coala.png", "mercat.png", "penguin.png"];
 const WORDS_POOL = ["Apple", "House", "Star", "River", "Cloud", "Bridge", "Forest", "Ocean", "Moon", "Sun", "Key", "Book", "Chair", "Door", "Floor", "Ghost", "Heart", "Light", "Magic", "Night", "Paper", "Queen", "Rock", "Ship", "Time", "Vibes", "Water", "Yacht", "Zen", "Map"];
 const NUMBERS_POOL = Array.from({ length: 100 }, (_, i) => i.toString());
 
