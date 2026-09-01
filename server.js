@@ -84,12 +84,18 @@ function startNewRound(roomId) {
   }
 }
 
-function restartGame(roomId, switchRoles) {
+function restartGame(roomId, { switchRoles = false, gameType = null, initiatorPlayerId = null, initiatorRole = null } = {}) {
   const roomData = rooms.get(roomId);
   if (!roomData?.gameState?.isGameOver) return;
   const { gameState } = roomData;
 
-  if (switchRoles) {
+  if (gameType && initiatorPlayerId && initiatorRole && gameState.players[initiatorPlayerId]) {
+    gameState.gameType = gameType;
+    gameState.players[initiatorPlayerId].role = initiatorRole;
+    for (const [playerId, player] of Object.entries(gameState.players)) {
+      if (playerId !== initiatorPlayerId) player.role = initiatorRole === "sender" ? "receiver" : "sender";
+    }
+  } else if (switchRoles) {
     for (const player of Object.values(gameState.players)) {
       player.role = player.role === "sender" ? "receiver" : "sender";
     }
@@ -100,14 +106,14 @@ function restartGame(roomId, switchRoles) {
   gameState.lastCorrectItem = null;
   gameState.currentRoundData = null;
   gameState.readyForNextRound = new Set();
+  gameState.readyPlayers = new Set();
   gameState.isGameOver = false;
 
-  for (const player of Object.values(gameState.players)) {
+  for (const [playerId, player] of Object.entries(gameState.players)) {
     if (player.ws?.readyState === 1) {
-      player.ws.send(JSON.stringify({ type: "GAME_RESTARTED", payload: { role: player.role } }));
+      player.ws.send(JSON.stringify({ type: "GAME_RESTARTED", payload: { roomId, gameType: gameState.gameType, role: player.role, playerId } }));
     }
   }
-  startNewRound(roomId);
 }
 
 wss.on("connection", (ws, req) => {
@@ -129,7 +135,12 @@ wss.on("connection", (ws, req) => {
         broadcastToRoom(roomId, { type: "ROOM_UPDATE", count: lobby.length });
         break;
       case "START_GAME":
-        if (gameState || lobby.length !== 2) return;
+        if (gameState) {
+          if (!gameState.isGameOver || !gameState.players[ws.playerId]) return;
+          restartGame(roomId, { gameType: payload.gameType, initiatorPlayerId: ws.playerId, initiatorRole: payload.role });
+          break;
+        }
+        if (lobby.length !== 2) return;
         const initiator = ws;
         const otherPlayer = lobby.find((p) => p.id !== initiator.id);
         if (!otherPlayer) return;
@@ -150,6 +161,8 @@ wss.on("connection", (ws, req) => {
           isGameOver: false,
         };
         roomData.lobby = [];
+        initiator.playerId = initiatorPlayerId;
+        otherPlayer.playerId = otherPlayerId;
         initiator.send(JSON.stringify({ type: "GAME_STARTED", payload: { roomId, gameType, role: initiatorRole, playerId: initiatorPlayerId } }));
         otherPlayer.send(JSON.stringify({ type: "GAME_STARTED", payload: { roomId, gameType, role: otherPlayerRole, playerId: otherPlayerId } }));
         break;
@@ -157,6 +170,7 @@ wss.on("connection", (ws, req) => {
         if (!gameState) return;
         const { playerId } = payload;
         if (gameState.players[playerId]) {
+          clearTimeout(gameState.players[playerId].disconnectTimer);
           gameState.players[playerId].ws = ws;
           ws.playerId = playerId;
           gameState.readyPlayers.add(playerId);
@@ -177,7 +191,7 @@ wss.on("connection", (ws, req) => {
         break;
       case "REQUEST_REMATCH":
         if (!gameState?.players[ws.playerId]) return;
-        restartGame(roomId, Boolean(payload?.switchRoles));
+        restartGame(roomId, { switchRoles: Boolean(payload?.switchRoles) });
         break;
     }
   });
@@ -186,14 +200,19 @@ wss.on("connection", (ws, req) => {
     const roomData = rooms.get(ws.roomId);
     if (!roomData) return;
     if (ws.playerId && roomData.gameState?.players[ws.playerId]) {
-      roomData.gameState.players[ws.playerId].ws = null;
-      const allPlayersDisconnected = Object.values(roomData.gameState.players).every((p) => p.ws === null);
-      if (allPlayersDisconnected) {
-        roomData.gameState = null;
-        roomData.lobby = [];
-      } else {
-        broadcastToRoom(ws.roomId, { type: "PLAYER_DISCONNECTED" });
-      }
+      const player = roomData.gameState.players[ws.playerId];
+      if (player.ws !== ws) return;
+      player.ws = null;
+      clearTimeout(player.disconnectTimer);
+      player.disconnectTimer = setTimeout(() => {
+        if (player.ws) return;
+        const allPlayersDisconnected = Object.values(roomData.gameState.players).every((roomPlayer) => roomPlayer.ws === null);
+        if (allPlayersDisconnected) {
+          rooms.delete(ws.roomId);
+        } else {
+          broadcastToRoom(ws.roomId, { type: "PLAYER_DISCONNECTED" });
+        }
+      }, 5000);
     } else {
       roomData.lobby = roomData.lobby.filter((p) => p.id !== ws.id);
       broadcastToRoom(ws.roomId, { type: "ROOM_UPDATE", count: roomData.lobby.length });
