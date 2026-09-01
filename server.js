@@ -39,8 +39,10 @@ function startNewRound(roomId) {
   const roomData = rooms.get(roomId);
   if (!roomData?.gameState) return;
   const { gameState } = roomData;
+  if (gameState.isGameOver) return;
   gameState.round++;
   if (gameState.round > MAX_ROUNDS) {
+    gameState.isGameOver = true;
     return broadcastToRoom(roomId, { type: "GAME_OVER", payload: { finalScore: gameState.score } });
   }
 
@@ -82,6 +84,32 @@ function startNewRound(roomId) {
   }
 }
 
+function restartGame(roomId, switchRoles) {
+  const roomData = rooms.get(roomId);
+  if (!roomData?.gameState?.isGameOver) return;
+  const { gameState } = roomData;
+
+  if (switchRoles) {
+    for (const player of Object.values(gameState.players)) {
+      player.role = player.role === "sender" ? "receiver" : "sender";
+    }
+  }
+
+  gameState.score = 0;
+  gameState.round = 0;
+  gameState.lastCorrectItem = null;
+  gameState.currentRoundData = null;
+  gameState.readyForNextRound = new Set();
+  gameState.isGameOver = false;
+
+  for (const player of Object.values(gameState.players)) {
+    if (player.ws?.readyState === 1) {
+      player.ws.send(JSON.stringify({ type: "GAME_RESTARTED", payload: { role: player.role } }));
+    }
+  }
+  startNewRound(roomId);
+}
+
 wss.on("connection", (ws, req) => {
   const { pathname } = parse(req.url);
   const roomId = pathname.substring(1);
@@ -119,6 +147,7 @@ wss.on("connection", (ws, req) => {
           round: 0,
           lastCorrectItem: null,
           readyPlayers: new Set(),
+          isGameOver: false,
         };
         roomData.lobby = [];
         initiator.send(JSON.stringify({ type: "GAME_STARTED", payload: { roomId, gameType, role: initiatorRole, playerId: initiatorPlayerId } }));
@@ -142,9 +171,13 @@ wss.on("connection", (ws, req) => {
         broadcastToRoom(roomId, { type: "GUESS_RESULT", payload: { result: isCorrect ? "Correct" : "Wrong", score: gameState.score, pickedItem: payload.item, correctItem } });
         break;
       case "REQUEST_NEXT_ROUND":
-        if (!gameState) return;
+        if (!gameState || gameState.isGameOver) return;
         if (ws.playerId) gameState.readyForNextRound.add(ws.playerId);
         if (gameState.readyForNextRound.size === 2) startNewRound(roomId);
+        break;
+      case "REQUEST_REMATCH":
+        if (!gameState?.players[ws.playerId]) return;
+        restartGame(roomId, Boolean(payload?.switchRoles));
         break;
     }
   });
