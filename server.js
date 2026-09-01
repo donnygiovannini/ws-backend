@@ -175,7 +175,9 @@ wss.on("connection", (ws, req) => {
           ws.playerId = playerId;
           gameState.readyPlayers.add(playerId);
         }
-        if (gameState.readyPlayers.size === 2) startNewRound(roomId);
+        // Route changes can cause a client to identify itself more than once.
+        // Only the transition into a fresh game's first round should start it.
+        if (gameState.readyPlayers.size === 2 && gameState.round === 0) startNewRound(roomId);
         break;
       case "SUBMIT_GUESS":
         if (!gameState?.currentRoundData) return;
