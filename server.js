@@ -1,9 +1,19 @@
 import { WebSocketServer } from "ws";
 import { parse } from "url";
 import { randomUUID } from "crypto";
+import { createServer } from "http";
 
 const PORT = process.env.PORT || 8081;
-const wss = new WebSocketServer({ port: PORT });
+const server = createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ status: "ok" }));
+  }
+  res.writeHead(404);
+  res.end("Not found");
+});
+const wss = new WebSocketServer({ server });
+server.listen(PORT, "0.0.0.0");
 const rooms = new Map();
 console.log(`✅ [SERVER] WebSocket server is running on ws://localhost:${PORT}`);
 
