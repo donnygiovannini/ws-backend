@@ -30,7 +30,7 @@ async function client(room) {
     },
   };
 }
-async function play(a, b, roles) {
+async function play(a, b, roles, customDeck = null) {
   const sender = roles[0] === "sender" ? a : b;
   const receiver = roles[0] === "receiver" ? a : b;
   let score = 0;
@@ -42,6 +42,7 @@ async function play(a, b, roles) {
     assert.equal(s.payload.receiver, null);
     assert.equal(r.payload.receiver.options.length, 4);
     assert(r.payload.receiver.options.includes(s.payload.sender.correctItem));
+    if (customDeck) assert(r.payload.receiver.options.every((item) => customDeck.includes(item)));
     const correct = round % 2 === 1;
     const item = correct ? s.payload.sender.correctItem : r.payload.receiver.options.find((x) => x !== s.payload.sender.correctItem);
     receiver.send("SUBMIT_GUESS", { item });
@@ -60,7 +61,7 @@ try {
   const health = await fetch(`${base.replace(/^ws/, "http").replace(/\/$/, "")}/health`);
   assert.equal(health.status, 200);
   assert.equal((await health.json()).status, "ok");
-  for (const gameType of ["colors", "emotions", "random_words", "numbers"]) {
+  for (const gameType of ["colors", "emotions", "random_words", "numbers", "custom_cards"]) {
     const room = `staging-smoke-${randomUUID()}`;
     const a = await client(room);
     const b = await client(room);
@@ -71,6 +72,11 @@ try {
     assert.equal((await isolated.next("ROOM_UPDATE")).count, 1);
     b.send("IDENTIFY_LOBBY");
     for (const update of await Promise.all([a.next("ROOM_UPDATE"), b.next("ROOM_UPDATE")])) assert.equal(update.count, 2);
+    const customDeck = gameType === "custom_cards" ? Array.from({ length: 20 }, (_, i) => `Custom full name and phrase ${i + 1}`) : null;
+    if (customDeck) {
+      a.send("DECK_ADD", { cards: customDeck });
+      assert.equal((await a.next("DECK_ACK")).payload.added, 20);
+    }
     a.send("START_GAME", { gameType, role: "sender" });
     const started = await Promise.all([a.next("GAME_STARTED"), b.next("GAME_STARTED")]);
     started.forEach((m, i) => {
@@ -78,14 +84,14 @@ try {
       assert.equal(m.payload.role, i === 0 ? "sender" : "receiver");
       [a, b][i].send("PLAYER_READY", { playerId: m.payload.playerId });
     });
-    await play(a, b, ["sender", "receiver"]);
+    await play(a, b, ["sender", "receiver"], customDeck);
     a.send("REQUEST_REMATCH", { switchRoles: true });
     const restarted = await Promise.all([a.next("GAME_RESTARTED"), b.next("GAME_RESTARTED")]);
     restarted.forEach((m, i) => {
       assert.equal(m.payload.role, i === 0 ? "receiver" : "sender");
       [a, b][i].send("PLAYER_READY", { playerId: m.payload.playerId });
     });
-    await play(a, b, ["receiver", "sender"]);
+    await play(a, b, ["receiver", "sender"], customDeck);
     console.log(`PASS ${gameType}: pairing, isolated room, 10 rounds, scores, rematch with switched roles`);
     sockets.forEach((s) => s.close());
   }

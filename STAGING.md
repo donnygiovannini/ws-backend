@@ -27,4 +27,14 @@ npm ci
 node scripts/smoke.mjs wss://ws-backend-staging.up.railway.app
 ```
 
-The test uses unique disposable rooms, checks HTTP health, pairs two independent WebSocket clients, verifies separate-room isolation, plays ten rounds in all four modes, checks correct and incorrect scoring, and completes rematches with swapped roles. It requires an explicit URL and never defaults to production.
+The test uses unique disposable rooms, checks HTTP health, pairs two independent WebSocket clients, verifies separate-room isolation, plays ten rounds in all five modes, checks correct and incorrect scoring, and completes rematches with swapped roles. It requires an explicit URL and never defaults to production.
+
+## Custom Cards
+
+Each room owns one shared deck. Players independently open the editor; `DECK_GET` / `DECK_STATE` synchronize its current state without changing their screens. `DECK_ADD`, `DECK_UPDATE`, and `DECK_REMOVE` apply atomic operations and return request acknowledgements. Card IDs and versions prevent lost edits. Drafts show typing live and reserve a card while it is being edited. Draft attribution uses public actor IDs separate from private reconnect credentials.
+
+Cards contain 1–120 characters, with whitespace normalized and case-insensitive duplicates skipped. Decks hold at most 40 cards and require at least 20 to start. Paste batches are validated before any change is applied. Starting Custom Cards snapshots the saved deck; editing is locked during play. Each game has ten rounds and four options. Rematches retain the snapshot; choosing Custom Cards again uses the latest edited deck.
+
+Disconnected drafts are cleared; saved room decks remain in memory for 30 minutes after everyone disconnects. They are not durable across deployments. Players can copy their deck to Notes and paste it back later.
+
+Run `npm test` for isolated server integration tests covering concurrent edits, limits, room access, reconnects, game start, scoring, and rematches.
